@@ -353,6 +353,11 @@ func (s *testClusterWorkerSuite) TestHeartbeatSplit(c *C) {
 	cluster := s.svr.GetRaftCluster()
 	c.Assert(cluster, NotNil)
 
+	// Disable region move.
+	for _, store := range cluster.GetStores() {
+		cluster.cachedCluster.setFakeRegionCount(store.GetId(), 1)
+	}
+
 	leaderPD := mustGetLeader(c, s.client, s.svr.getLeaderPath())
 	conn, err := rpcConnect(leaderPD.GetAddr())
 	c.Assert(err, IsNil)
