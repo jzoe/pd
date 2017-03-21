@@ -316,6 +316,10 @@ type clusterInfo struct {
 	meta    *metapb.Cluster
 	stores  *storesInfo
 	regions *regionsInfo
+
+	// For test cases.
+	fakeLeaderCount map[uint64]int // storeID -> leader count.
+	fakeRegionCount map[uint64]int // storeID -> region count.
 }
 
 func newClusterInfo(id IDAllocator) *clusterInfo {
@@ -396,7 +400,27 @@ func (c *clusterInfo) putMetaLocked(meta *metapb.Cluster) error {
 func (c *clusterInfo) getStore(storeID uint64) *storeInfo {
 	c.RLock()
 	defer c.RUnlock()
-	return c.stores.getStore(storeID)
+	return c.getStoreLocked(storeID)
+}
+
+func (c *clusterInfo) getStoreLocked(storeID uint64) *storeInfo {
+	store := c.stores.getStore(storeID)
+	c.setupStoreStatus(store)
+	return store
+}
+
+func (c *clusterInfo) setupStoreStatus(store *storeInfo) {
+	if store == nil {
+		return
+	}
+	store.status.LeaderCount = c.regions.getStoreLeaderCount(store.GetId())
+	if count, ok := c.fakeLeaderCount[store.GetId()]; ok {
+		store.status.LeaderCount = count
+	}
+	store.status.RegionCount = c.regions.getStoreRegionCount(store.GetId())
+	if count, ok := c.fakeRegionCount[store.GetId()]; ok {
+		store.status.RegionCount = count
+	}
 }
 
 func (c *clusterInfo) putStore(store *storeInfo) error {
@@ -430,7 +454,11 @@ func (c *clusterInfo) unblockStore(storeID uint64) {
 func (c *clusterInfo) getStores() []*storeInfo {
 	c.RLock()
 	defer c.RUnlock()
-	return c.stores.getStores()
+	stores := c.stores.getStores()
+	for _, s := range stores {
+		c.setupStoreStatus(s)
+	}
+	return stores
 }
 
 func (c *clusterInfo) getMetaStores() []*metapb.Store {
@@ -494,12 +522,18 @@ func (c *clusterInfo) getRegionCount() int {
 func (c *clusterInfo) getStoreRegionCount(storeID uint64) int {
 	c.RLock()
 	defer c.RUnlock()
+	if count, ok := c.fakeRegionCount[storeID]; ok {
+		return count
+	}
 	return c.regions.getStoreRegionCount(storeID)
 }
 
 func (c *clusterInfo) getStoreLeaderCount(storeID uint64) int {
 	c.RLock()
 	defer c.RUnlock()
+	if count, ok := c.fakeLeaderCount[storeID]; ok {
+		return count
+	}
 	return c.regions.getStoreLeaderCount(storeID)
 }
 
@@ -520,7 +554,7 @@ func (c *clusterInfo) getRegionStores(region *regionInfo) []*storeInfo {
 	defer c.RUnlock()
 	var stores []*storeInfo
 	for id := range region.GetStoreIds() {
-		if store := c.stores.getStore(id); store != nil {
+		if store := c.getStoreLocked(id); store != nil {
 			stores = append(stores, store)
 		}
 	}
@@ -532,7 +566,7 @@ func (c *clusterInfo) getFollowerStores(region *regionInfo) []*storeInfo {
 	defer c.RUnlock()
 	var stores []*storeInfo
 	for id := range region.GetFollowers() {
-		if store := c.stores.getStore(id); store != nil {
+		if store := c.getStoreLocked(id); store != nil {
 			stores = append(stores, store)
 		}
 	}
@@ -551,11 +585,30 @@ func (c *clusterInfo) handleStoreHeartbeat(stats *pdpb.StoreStats) error {
 	}
 
 	store.status.StoreStats = proto.Clone(stats).(*pdpb.StoreStats)
-	store.status.LeaderCount = uint32(c.regions.getStoreLeaderCount(storeID))
 	store.status.LastHeartbeatTS = time.Now()
 
 	c.stores.setStore(store)
 	return nil
+}
+
+// setFakeLeaderCount setups leader count for a store. It should be used in test only.
+func (c *clusterInfo) setFakeLeaderCount(storeID uint64, count int) {
+	c.Lock()
+	defer c.Unlock()
+	if c.fakeLeaderCount == nil {
+		c.fakeLeaderCount = make(map[uint64]int)
+	}
+	c.fakeLeaderCount[storeID] = count
+}
+
+// setFakeRegionCount setups region count for a store. It should be used in test only.
+func (c *clusterInfo) setFakeRegionCount(storeID uint64, count int) {
+	c.Lock()
+	defer c.Unlock()
+	if c.fakeRegionCount == nil {
+		c.fakeRegionCount = make(map[uint64]int)
+	}
+	c.fakeRegionCount[storeID] = count
 }
 
 // handleRegionHeartbeat updates the region information.

@@ -61,17 +61,17 @@ func (c *testClusterInfo) setStoreBusy(storeID uint64, busy bool) {
 func (c *testClusterInfo) addLeaderStore(storeID uint64, leaderCount int) {
 	store := newStoreInfo(&metapb.Store{Id: storeID})
 	store.status.LastHeartbeatTS = time.Now()
-	store.status.LeaderCount = uint32(leaderCount)
 	c.putStore(store)
+	c.setFakeLeaderCount(storeID, leaderCount)
 }
 
 func (c *testClusterInfo) addRegionStore(storeID uint64, regionCount int) {
 	store := newStoreInfo(&metapb.Store{Id: storeID})
 	store.status.LastHeartbeatTS = time.Now()
-	store.status.RegionCount = uint32(regionCount)
 	store.status.Capacity = uint64(1024)
 	store.status.Available = store.status.Capacity
 	c.putStore(store)
+	c.setFakeRegionCount(storeID, regionCount)
 }
 
 func (c *testClusterInfo) addLabelsStore(storeID uint64, regionCount int, labels map[string]string) {
@@ -95,15 +95,11 @@ func (c *testClusterInfo) addLeaderRegion(regionID uint64, leaderID uint64, foll
 }
 
 func (c *testClusterInfo) updateLeaderCount(storeID uint64, leaderCount int) {
-	store := c.getStore(storeID)
-	store.status.LeaderCount = uint32(leaderCount)
-	c.putStore(store)
+	c.setFakeLeaderCount(storeID, leaderCount)
 }
 
 func (c *testClusterInfo) updateRegionCount(storeID uint64, regionCount int) {
-	store := c.getStore(storeID)
-	store.status.RegionCount = uint32(regionCount)
-	c.putStore(store)
+	c.setFakeRegionCount(storeID, regionCount)
 }
 
 func (c *testClusterInfo) updateSnapshotCount(storeID uint64, snapshotCount int) {
